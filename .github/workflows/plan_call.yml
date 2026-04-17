@@ -55,7 +55,7 @@ jobs:
           output-env-credentials: true
           #role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
-          aws-profile: idseq-${{ inputs.environment }}
+          aws-profile: "idseq-${{ inputs.environment }}"
       - name: Setup Terraform
         run: |
           curl -OLs https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
@@ -69,9 +69,9 @@ jobs:
       - name: Terraform Plan
         id: plan
         env:
-          AWS_REGION: ${{ env.AWS_REGION }}"
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}"
-          AWS_PROFILE: idseq-${{ inputs.environment }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          AWS_PROFILE: "idseq-${{ inputs.environment }}"
         run: |
           set -x
           aws sts get-caller-identity
