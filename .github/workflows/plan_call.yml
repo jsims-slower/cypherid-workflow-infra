@@ -56,16 +56,16 @@ jobs:
           #role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
           aws-profile: "idseq-${{ inputs.environment }}"
-      - name: Setup Terraform
-        run: |
-          curl -OLs https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
-          sudo unzip -o terraform_${TERRAFORM_VERSION}_linux_amd64.zip -d /usr/local/bin
       - name: Install AWS CLI
         uses: unfor19/install-aws-cli-action@v1
         with:
           version: 2
           verbose: false
           arch: amd64
+      - name: Setup Terraform
+        run: |
+          curl -OLs https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
+          sudo unzip -o terraform_${TERRAFORM_VERSION}_linux_amd64.zip -d /usr/local/bin
       - name: Terraform Plan
         id: plan
         env:
@@ -74,12 +74,8 @@ jobs:
           AWS_PROFILE: "idseq-${{ inputs.environment }}"
         run: |
           set -x
-          aws sts get-caller-identity
-          aws configure get region
           source "environment.${{ inputs.environment }}"
-          make package-lambdas
-          make templates init-tf
-          terraform refresh
+          make package-lambdas templates init-tf
           set +e
           terraform plan -input=false -detailed-exitcode -refresh=false -out="${{ github.workspace }}/tf.plan"
           exitcode=$?
