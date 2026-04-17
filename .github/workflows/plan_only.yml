@@ -2,6 +2,18 @@ name: Terraform Plan
 run-name: Terraform Plan in ${{ github.base_ref || github.ref_name }} by ${{ github.actor }}
 
 on:
+  #  push:
+  #    branches:
+  #      - development
+  #      - staging
+  #      - main
+  #      - 'releases/**'
+  #  pull_request:
+  #    branches:
+  #      - development
+  #      - staging
+  #      - main
+  #      - 'releases/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -19,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.base_ref || github.ref_name }}-${{ inputs.environment }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref || github.run_id }}-${{ inputs.environment }}
   cancel-in-progress: true
 
 jobs:
@@ -74,10 +86,10 @@ jobs:
     steps:
       - name: Generate Summary
         run: |
-          plan_result=${{ needs.plan.result }}
-          echo "plan.result=$plan_result"
           change_count=${{ needs.plan.outputs.change-count }}
-          echo "change_count=$change_count"
+          echo "change-count=$change_count"
+          ls -al results/
+
           echo "|   | Status | Changes |" >> $GITHUB_STEP_SUMMARY
           echo "| - | ------ | ------- |" >> $GITHUB_STEP_SUMMARY
           if [[ "$plan_result" != "success" ]]; then
@@ -87,3 +99,9 @@ jobs:
           else
             echo "| :yellow_circle: | Success | $change_count |" >> $GITHUB_STEP_SUMMARY
           fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Address | Action |" >> $GITHUB_STEP_SUMMARY
+          echo "| ------- | ------ |" >> $GITHUB_STEP_SUMMARY
+          jq -c '{address: .resource_changes[].address, action: .resource_changes[].action}' results/*.json | jq -r '. | "|\(.address)|\(.action)|"'
+          jq -c '{address: .resource_changes[].address, action: .resource_changes[].action}' results/*.json | jq -r '. | "|\(.address)|\(.action)|"' >> $GITHUB_STEP_SUMMARY

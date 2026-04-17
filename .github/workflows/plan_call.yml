@@ -1,4 +1,4 @@
-name: Plan Component Call
+name: Plan Call
 
 on:
   workflow_call:
@@ -12,8 +12,11 @@ on:
         description: "Then number of changes in the generated Plan"
         value: ${{ jobs.plan.outputs.change-count }}
       plan-artifact-id:
-        description: "Then number of changes in the generated Plan"
-        value: ${{ jobs.plan.outputs.count }}
+        description: "The Artifact ID of the generated Terraform Plan"
+        value: ${{ jobs.plan.outputs.plan-artifact-id }}
+      result-artifact-id:
+        description: "The Artifact ID of the Result JSON"
+        value: "${{ jobs.plan.outputs.result-artifact-id }}"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,8 +30,9 @@ jobs:
     env:
       AWS_REGION: us-west-2
     outputs:
-      change-count: ${{ steps.plan.outputs.change-count }}
+      change-count: ${{ steps.create-result.outputs.change-count }}
       plan-artifact-id: ${{ steps.upload-plan.outputs.artifact-id }}
+      result-artifact-id: "${{ steps.upload-result.outputs.artifact-id }}"
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v6
@@ -83,17 +87,16 @@ jobs:
           if [[ $exitcode -eq 1 ]]; then
             exit $exitcode
           fi
-          terraform show -json "${{ github.workspace }}/tf.plan" > plan.json
-          change_count=$(jq -r '.resource_changes[].change.actions[]' plan.json | grep -v "no-op" | wc -l)
-          echo "change-count=$change_count" >> "$GITHUB_OUTPUT"
+          terraform show -json "${{ github.workspace }}/tf.plan" > "${{ github.workspace }}/plan.json"
       # TODO: Only uncomment for local execution via nektos act, when testing outputs and artifacts
-      #- name: Terraform Plan
-      #  id: plan
-      #  run: |
-      #    echo "foo" > "${{ github.workspace }}/tf.plan"
-      #    change_count=$(( RANDOM % 3 ))
-      #    echo "change-count=$change_count"
-      #    echo "change-count=$change_count" >> "$GITHUB_OUTPUT"
+#      - name: Terraform Plan
+#        id: plan
+#        run: |
+#          set -x
+#          echo "foo" > "${{ github.workspace }}/tf.plan"
+#          echo '{"resource_changes": [{"address": "foo", "change": {"actions": ["update"]}}]}' > "${{ github.workspace }}/plan.json"
+#          cat "${{ github.workspace }}/plan.json"
+#          jq . "${{ github.workspace }}/plan.json"
       - name: Upload Plan as Artifact
         id: upload-plan
         uses: actions/upload-artifact@v5
@@ -102,4 +105,28 @@ jobs:
           path: "${{ github.workspace }}/tf.plan"
           retention-days: 1
           compression-level: 0 # Plan files are already pretty compact, and max compression gives at best 10% savings
+          if-no-files-found: error
+      # TODO: Only uncomment for local execution via nektos act, when testing outputs and artifacts
+      - name: Create Result JSON
+        id: create-result
+        run: |
+          result_json=$(jq '{address: .resource_changes[].address, action: .resource_changes[].change.actions[0]} | select(.action != "no-op")' "${{ github.workspace }}/plan.json" | jq -c --slurp .)
+          echo "result-json=$result_json"
+          change_count=$(jq -r '.resource_changes[].change.actions[]' "${{ github.workspace }}/plan.json" | grep -v "no-op" | wc -l)
+          echo "change-count=$change_count"
+          echo "change-count=$change_count" >> "$GITHUB_OUTPUT"
+          jq -cn \
+            --arg change_count $change_count \
+            --arg artifact_name "plan" \
+            --arg artifact_id "${{ steps.upload-plan.outputs.artifact-id }}" \
+            --argjson resource_changes "$result_json" \
+            '$ARGS.named' > "${{ github.workspace }}/result.json"
+          jq -c . "${{ github.workspace }}/result.json"
+      - name: Upload Result JSON as Artifact
+        id: upload-result
+        uses: actions/upload-artifact@v5
+        with:
+          name: "result"
+          path: "${{ github.workspace }}/result.json"
+          retention-days: 1
           if-no-files-found: error
