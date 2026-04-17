@@ -68,8 +68,14 @@ jobs:
           arch: amd64
       - name: Terraform Plan
         id: plan
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}"
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}"
+          AWS_PROFILE: idseq-${{ inputs.environment }}
         run: |
           set -x
+          aws sts get-caller-identity
+          aws configure get region
           source "environment.${{ inputs.environment }}"
           make package-lambdas
           make templates init-tf
