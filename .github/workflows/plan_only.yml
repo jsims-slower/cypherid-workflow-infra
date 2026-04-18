@@ -95,14 +95,12 @@ jobs:
           echo "change-count=$change_count"
           ls -al results/
 
-          echo "|   | Status | Changes |" >> $GITHUB_STEP_SUMMARY
-          echo "| - | ------ | ------- |" >> $GITHUB_STEP_SUMMARY
-          if [[ "$plan_result" != "success" ]]; then
-            echo "| :red_circle: | Error | $plan_result |" >> $GITHUB_STEP_SUMMARY
-          elif [[ "$change_count" == "0" ]]; then
-            echo "| :green_circle: | Success | No Changes |" >> $GITHUB_STEP_SUMMARY
+          echo "|   | Changes |" >> $GITHUB_STEP_SUMMARY
+          echo "| - | ------- |" >> $GITHUB_STEP_SUMMARY
+          if [[ "$change_count" == "0" ]]; then
+            echo "| :green_circle: | No Changes |" >> $GITHUB_STEP_SUMMARY
           else
-            echo "| :yellow_circle: | Success | $change_count |" >> $GITHUB_STEP_SUMMARY
+            echo "| :yellow_circle: | $change_count |" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
