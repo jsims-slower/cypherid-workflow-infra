@@ -110,7 +110,9 @@ jobs:
       - name: Create Result JSON
         id: create-result
         run: |
-          result_json=$(jq '{address: .resource_changes[].address, action: .resource_changes[].change.actions[0]} | select(.action != "no-op")' "${{ github.workspace }}/plan.json" | jq -c --slurp .)
+          set -x
+          wc -l "${{ github.workspace }}/plan.json"
+          result_json=$(jq '.resource_changes[] | select(.change.actions[0] != "no-op")' "${{ github.workspace }}/plan.json"  | jq '{address, action: .change.actions[0]}' | jq -c --slurp .)
           echo "result-json=$result_json"
           change_count=$(jq -r '.resource_changes[].change.actions[]' "${{ github.workspace }}/plan.json" | grep -v "no-op" | wc -l)
           echo "change-count=$change_count"

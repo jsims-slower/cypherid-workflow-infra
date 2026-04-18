@@ -84,6 +84,11 @@ jobs:
     needs:
       - plan
     steps:
+      - name: "Download Results"
+        uses: actions/download-artifact@v5
+        with:
+          artifact-ids: ${{ needs.plan.outputs.result-artifact-id }}
+          path: results
       - name: Generate Summary
         run: |
           change_count=${{ needs.plan.outputs.change-count }}
@@ -103,5 +108,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Address | Action |" >> $GITHUB_STEP_SUMMARY
           echo "| ------- | ------ |" >> $GITHUB_STEP_SUMMARY
-          jq -c '{address: .resource_changes[].address, action: .resource_changes[].action}' results/*.json | jq -r '. | "|\(.address)|\(.action)|"'
-          jq -c '{address: .resource_changes[].address, action: .resource_changes[].action}' results/*.json | jq -r '. | "|\(.address)|\(.action)|"' >> $GITHUB_STEP_SUMMARY
+          jq -r '.resource_changes[] | "|\(.address)|\(.action)|"' results/*.json
+          jq -r '.resource_changes[] | "|\(.address)|\(.action)|"' results/*.json >> $GITHUB_STEP_SUMMARY
