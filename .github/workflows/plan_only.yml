@@ -2,18 +2,18 @@ name: Plan only
 run-name: Plan only in env ${{ inputs.environment || github.base_ref || github.ref_name }} branch ${{ github.base_ref || github.ref_name }} by ${{ github.actor }}
 
 on:
-#  push:
-#    branches:
-#      - development
-#      - staging
-#      - main
-#      - 'releases/**'
-#  pull_request:
-#    branches:
-#      - development
-#      - staging
-#      - main
-#      - 'releases/**'
+  push:
+    branches:
+      - development
+      - staging
+      - main
+      - 'releases/**'
+  pull_request:
+    branches:
+      - development
+      - staging
+      - main
+      - 'releases/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -32,7 +32,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref || github.run_id }}-${{ inputs.environment }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   should-plan:
