@@ -48,6 +48,7 @@ jobs:
         if: ${{ !env.ACT }}
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/czid-${{ inputs.environment }}-gh-actions-executor
+          output-env-credentials: true
           #role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
           aws-profile: idseq-${{ inputs.environment }}
