@@ -7,11 +7,6 @@ on:
         description: Both Github Environment and AWS Environment
         type: string
         required: true
-      terraform_version:
-        description: Terraform Version to use
-        type: string
-        required: true
-        default: 1.14.8 # TODO: Make this more dynamic
     outputs:
       plan-artifact-id:
         description: The Artifact ID of the generated Terraform Plan
@@ -22,6 +17,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TERRAFORM_VERSION: "1.14.8"
 
 jobs:
   plan:
@@ -69,7 +65,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: ${{ inputs.terraform_version }}
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
       - name: Terraform Plan
         id: terraform-plan
