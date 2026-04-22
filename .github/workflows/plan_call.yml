@@ -68,17 +68,21 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
-      - name: Terraform Plan
-        id: terraform-plan
-        # We manually create aws_config.json instead of using the Makefile, as init-tf also calls terraform init, which will fail if provider versions have changes or similar
+      - name: Setup Terraform Environment
+        # We manually create aws_config.json instead of using the 'init-tf' Makefile target, as that target also calls 'terraform init' without the '-upgrade' flag, which we need
         run: |
           set -x
           source "environment.${{ inputs.environment }}"
+          set +x
           echo "TF_DATA_DIR=$TF_DATA_DIR"
           mkdir -p "$TF_DATA_DIR"
           jq -n ".region=\"us-west-2\" | .bucket=env.TF_S3_BUCKET | .key=env.APP_NAME+env.DEPLOYMENT_ENVIRONMENT | .encrypt=true" > "$TF_DATA_DIR/aws_config.json"
           jq . "$TF_DATA_DIR/aws_config.json"
+      - name: Package Lambdas and create Templates
+        run: |
           make package-lambdas templates
+      - name: Terraform Plan
+        run: |
           terraform init -input=false -upgrade
           echo "Plan will be created in: ${{ github.workspace }}/tf.plan"
           set +e
@@ -94,7 +98,6 @@ jobs:
           jq -c . "${{ github.workspace }}/resource_changes.json"
       # TODO: Only uncomment for local execution via nektos act, when testing outputs and artifacts
       #- name: Terraform Plan
-      #  id: terraform-plan
       #  run: |
       #    echo foo > "${{ github.workspace }}/tf.plan"
       #    jq -cn '$ARGS.positional' --jsonargs '{"address": "foo", "action": "create"}' '{"address": "bar", "action": "update"}' '{"address": "baz", "action": "delete"}' > "${{ github.workspace }}/resource_changes.json"
@@ -108,7 +111,6 @@ jobs:
           compression-level: 0 # Plan files are already pretty compact, and max compression gives at best 10% savings
           if-no-files-found: error
       - name: Create Result JSON
-        id: create-result
         run: |
           change_count=$(jq 'length' "${{ github.workspace }}/resource_changes.json")
           echo "change-count=$change_count"
