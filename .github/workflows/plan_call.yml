@@ -1,26 +1,27 @@
-name: Terraform Plan Call
+name: Plan Call
 
 on:
   workflow_call:
     inputs:
       environment:
-        description: "Both Github Environment and AWS Environment"
+        description: Both Github Environment and AWS Environment
         type: string
         required: true
+      terraform_version:
+        description: Terraform Version to use
+        type: string
+        required: true
+        default: 1.14.8 # TODO: Make this more dynamic
     outputs:
-      change-count:
-        description: "Then number of changes in the generated Plan"
-        value: ${{ jobs.plan.outputs.change-count }}
       plan-artifact-id:
-        description: "The Artifact ID of the generated Terraform Plan"
+        description: The Artifact ID of the generated Terraform Plan
         value: ${{ jobs.plan.outputs.plan-artifact-id }}
       result-artifact-id:
-        description: "The Artifact ID of the Result JSON"
-        value: "${{ jobs.plan.outputs.result-artifact-id }}"
+        description: The Artifact ID of the Result JSON
+        value: ${{ jobs.plan.outputs.result-artifact-id }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  TERRAFORM_VERSION: 1.14.8 # TODO: Make this more dynamic
 
 jobs:
   plan:
@@ -30,9 +31,8 @@ jobs:
     env:
       AWS_REGION: us-west-2
     outputs:
-      change-count: ${{ steps.create-result.outputs.change-count }}
       plan-artifact-id: ${{ steps.upload-plan.outputs.artifact-id }}
-      result-artifact-id: "${{ steps.upload-result.outputs.artifact-id }}"
+      result-artifact-id: ${{ steps.upload-result.outputs.artifact-id }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v6
@@ -41,6 +41,12 @@ jobs:
       - name: Reconfigure Git to use HTTP authentication
         run: |
           git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+      - name: Install AWS CLI
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          verbose: false
+          arch: amd64
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6.1.0
         if: ${{ !env.ACT }}
@@ -59,27 +65,25 @@ jobs:
           output-env-credentials: true
           #role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ env.AWS_REGION }}
-          aws-profile: "idseq-${{ inputs.environment }}"
-      - name: Install AWS CLI
-        uses: unfor19/install-aws-cli-action@v1
-        with:
-          version: 2
-          verbose: false
-          arch: amd64
+          aws-profile: idseq-${{ inputs.environment }}
       - name: Setup Terraform
-        run: |
-          curl -OLs https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip
-          sudo unzip -o terraform_${TERRAFORM_VERSION}_linux_amd64.zip -d /usr/local/bin
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
       - name: Terraform Plan
-        id: plan
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
-          AWS_PROFILE: "idseq-${{ inputs.environment }}"
+        id: terraform-plan
+        # We manually create aws_config.json instead of using the Makefile, as init-tf also calls terraform init, which will fail if provider versions have changes or similar
         run: |
           set -x
           source "environment.${{ inputs.environment }}"
-          make package-lambdas templates init-tf
+          echo "TF_DATA_DIR=$TF_DATA_DIR"
+          mkdir -p "$TF_DATA_DIR"
+          jq -n ".region=\"us-west-2\" | .bucket=env.TF_S3_BUCKET | .key=env.APP_NAME+env.DEPLOYMENT_ENVIRONMENT | .encrypt=true" > "$TF_DATA_DIR/aws_config.json"
+          jq . "$TF_DATA_DIR/aws_config.json"
+          make package-lambdas templates
+          terraform init -input=false -upgrade
+          echo "Plan will be created in: ${{ github.workspace }}/tf.plan"
           set +e
           terraform plan -input=false -detailed-exitcode -refresh=false -out="${{ github.workspace }}/tf.plan"
           exitcode=$?
@@ -87,47 +91,42 @@ jobs:
           if [[ $exitcode -eq 1 ]]; then
             exit $exitcode
           fi
-          terraform show -json "${{ github.workspace }}/tf.plan" > "${{ github.workspace }}/plan.json"
+          set -e
+          terraform show -json "${{ github.workspace }}/tf.plan" > plan.json
+          jq '.resource_changes[] | select(.change.actions[0] != "no-op" and .change.actions[0] != "read")' plan.json | jq '{address, action: .change.actions[0]}' | jq -c --slurp . > "${{ github.workspace }}/resource_changes.json"
+          jq -c . "${{ github.workspace }}/resource_changes.json"
       # TODO: Only uncomment for local execution via nektos act, when testing outputs and artifacts
-#      - name: Terraform Plan
-#        id: plan
-#        run: |
-#          set -x
-#          echo "foo" > "${{ github.workspace }}/tf.plan"
-#          echo '{"resource_changes": [{"address": "foo", "change": {"actions": ["update"]}}]}' > "${{ github.workspace }}/plan.json"
-#          cat "${{ github.workspace }}/plan.json"
-#          jq . "${{ github.workspace }}/plan.json"
+      #- name: Terraform Plan
+      #  id: terraform-plan
+      #  run: |
+      #    echo foo > "${{ github.workspace }}/tf.plan"
+      #    jq -cn '$ARGS.positional' --jsonargs '{"address": "foo", "action": "create"}' '{"address": "bar", "action": "update"}' '{"address": "baz", "action": "delete"}' > "${{ github.workspace }}/resource_changes.json"
       - name: Upload Plan as Artifact
         id: upload-plan
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
-          name: "plan"
-          path: "${{ github.workspace }}/tf.plan"
+          name: plan
+          path: ${{ github.workspace }}/tf.plan
           retention-days: 1
           compression-level: 0 # Plan files are already pretty compact, and max compression gives at best 10% savings
           if-no-files-found: error
-      # TODO: Only uncomment for local execution via nektos act, when testing outputs and artifacts
       - name: Create Result JSON
         id: create-result
         run: |
-          wc -l "${{ github.workspace }}/plan.json"
-          result_json=$(jq '.resource_changes[] | select(.change.actions[0] != "no-op")' "${{ github.workspace }}/plan.json"  | jq '{address, action: .change.actions[0]}' | jq -c --slurp .)
-          echo "result-json=$result_json"
-          change_count=$(jq -r '.resource_changes[].change.actions[]' "${{ github.workspace }}/plan.json" | grep -v "no-op" | wc -l)
+          change_count=$(jq 'length' "${{ github.workspace }}/resource_changes.json")
           echo "change-count=$change_count"
-          echo "change-count=$change_count" >> "$GITHUB_OUTPUT"
-          jq -cn \
-            --arg change_count $change_count \
+          jq -cnS \
             --arg artifact_name "plan" \
             --arg artifact_id "${{ steps.upload-plan.outputs.artifact-id }}" \
-            --argjson resource_changes "$result_json" \
+            --argjson change_count "$change_count" \
+            --argjson resource_changes $(<"${{ github.workspace }}/resource_changes.json") \
             '$ARGS.named' > "${{ github.workspace }}/result.json"
-          jq -c . "${{ github.workspace }}/result.json"
+          jq . "${{ github.workspace }}/result.json"
       - name: Upload Result JSON as Artifact
         id: upload-result
         uses: actions/upload-artifact@v5
         with:
-          name: "result"
-          path: "${{ github.workspace }}/result.json"
+          name: result
+          path: ${{ github.workspace }}/result.json
           retention-days: 1
           if-no-files-found: error
